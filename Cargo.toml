@@ -1,0 +1,19 @@
+[package]
+name = "litex-pac"
+version = "0.1.0"
+authors = ["Simon Thornington <simon.thornington@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+riscv = "0.6.0"
+bare-metal = "0.2.5"
+vcell = "0.1.2"
+
+[dependencies.riscv-rt]
+optional = true
+version = "0.8.0"
+
+[features]
+rt = ["riscv-rt"]

@@ -1,0 +1,1 @@
+python3 ulx3s.py --cpu-type vexriscv --cpu-variant imac --csr-data-width 32 --device LFE5U-85F --sdram-module IS42S16160 --with-oled --csr-svd ulx3s.svd --build
