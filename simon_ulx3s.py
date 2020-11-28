@@ -37,7 +37,7 @@ from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 class _CRG(Module):
     def __init__(self, platform, sys_clk_freq, with_usb_pll=False, sdram_rate="1:1"):
         self.rst = Signal()
-        self.clock_domains.cd_sys    = ClockDomain()
+        self.clock_domains.cd_sys = ClockDomain()
         if sdram_rate == "1:2":
             self.clock_domains.cd_sys2x    = ClockDomain()
             self.clock_domains.cd_sys2x_ps = ClockDomain(reset_less=True)
@@ -54,7 +54,7 @@ class _CRG(Module):
         self.submodules.pll = pll = ECP5PLL()
         self.comb += pll.reset.eq(rst | self.rst)
         pll.register_clkin(clk25, 25e6)
-        pll.create_clkout(self.cd_sys,    sys_clk_freq)
+        pll.create_clkout(self.cd_sys, sys_clk_freq)
         if sdram_rate == "1:2":
             pll.create_clkout(self.cd_sys2x,    2*sys_clk_freq)
             pll.create_clkout(self.cd_sys2x_ps, 2*sys_clk_freq, phase=180) # Idealy 90° but needs to be increased.
@@ -114,7 +114,9 @@ class BaseSoC(SoCCore):
             usb_iobuf = usbio.IoBuf(usb_pads.d_p, usb_pads.d_n, usb_pads.pullup)
             # self.submodules.usb = epfifo.PerEndpointFifoInterface(usb_iobuf, debug=True)
             # just enumerate and hook up dummy debug wishbone
-            self.submodules.usb = dummyusb.DummyUsb(usb_iobuf, debug=True)
+            self.submodules.usb = dummyusb.DummyUsb(usb_iobuf,
+                                                    debug=True,
+                                                    cdc=True)
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
