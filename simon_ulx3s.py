@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 #
-# This file is part of LiteX-Boards.
+# Forked from  LiteX-Boards, with additions to support USB debugging.
 #
+# Copyright (c) 2020 Simon Thornington <simon.thornington@gmail.com>
 # Copyright (c) 2018-2019 Florent Kermarrec <florent@enjoy-digital.fr>
 # Copyright (c) 2018 David Shah <dave@ds0.me>
 # SPDX-License-Identifier: BSD-2-Clause
@@ -35,6 +36,7 @@ from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 
 class _CRG(Module):
     def __init__(self, platform, sys_clk_freq, with_usb_pll=False, sdram_rate="1:1"):
+        self.rst = Signal()
         self.clock_domains.cd_sys    = ClockDomain()
         if sdram_rate == "1:2":
             self.clock_domains.cd_sys2x    = ClockDomain()
@@ -50,7 +52,7 @@ class _CRG(Module):
 
         # PLL
         self.submodules.pll = pll = ECP5PLL()
-        self.comb += pll.reset.eq(rst)
+        self.comb += pll.reset.eq(rst | self.rst)
         pll.register_clkin(clk25, 25e6)
         pll.create_clkout(self.cd_sys,    sys_clk_freq)
         if sdram_rate == "1:2":
@@ -62,7 +64,7 @@ class _CRG(Module):
         # USB PLL
         if with_usb_pll:
             self.submodules.usb_pll = usb_pll = ECP5PLL()
-            self.comb += usb_pll.reset.eq(rst)
+            self.comb += usb_pll.reset.eq(rst | self.rst)
             usb_pll.register_clkin(clk25, 25e6)
             self.clock_domains.cd_usb_12 = ClockDomain()
             self.clock_domains.cd_usb_48 = ClockDomain()
@@ -153,29 +155,32 @@ class BaseSoC(SoCCore):
 
 def main():
     parser = argparse.ArgumentParser(description="LiteX SoC on ULX3S")
-    parser.add_argument("--build", action="store_true", help="Build bitstream")
-    parser.add_argument("--load",  action="store_true", help="Load bitstream")
-    parser.add_argument("--toolchain", default="trellis",   help="Gateware toolchain to use, trellis (default) or diamond")
-    parser.add_argument("--device",             dest="device",    default="LFE5U-45F", help="FPGA device, ULX3S can be populated with LFE5U-45F (default) or LFE5U-85F")
-    parser.add_argument("--revision", default="2.0", type=str,  help="Board revision 2.0 (default), 1.7")
-    parser.add_argument("--sys-clk-freq", default=50e6,           help="System clock frequency (default=50MHz)")
-    parser.add_argument("--sdram-module", default="MT48LC16M16",  help="SDRAM module: MT48LC16M16, AS4C32M16 or AS4C16M16 (default=MT48LC16M16)")
-    parser.add_argument("--with-spi-sdcard", action="store_true", help="Enable SPI-mode SDCard support")
-    parser.add_argument("--with-sdcard", action="store_true",     help="Enable SDCard support")
-    parser.add_argument("--with-oled", action="store_true",       help="Enable SDD1331 OLED support")
-    parser.add_argument("--sdram-rate",  default="1:1", help="SDRAM Rate 1:1 Full Rate (default), 1:2 Half Rate")
-    parser.add_argument("--with-us2-debug", action="store_true",  help="Enable Wishbone debug bridge on US2")
+    parser.add_argument("--build",           action="store_true",   help="Build bitstream")
+    parser.add_argument("--load",            action="store_true",   help="Load bitstream")
+    parser.add_argument("--toolchain",       default="trellis",     help="FPGA toolchain: trellis (default) or diamond")
+    parser.add_argument("--device",          default="LFE5U-45F",   help="FPGA device: LFE5U-12F, LFE5U-25F, LFE5U-45F (default)  or LFE5U-85F")
+    parser.add_argument("--revision",        default="2.0",         help="Board revision: 2.0 (default) or 1.7")
+    parser.add_argument("--sys-clk-freq",    default=50e6,          help="System clock frequency  (default: 50MHz)")
+    parser.add_argument("--sdram-module",    default="MT48LC16M16", help="SDRAM module: MT48LC16M16 (default), AS4C32M16 or AS4C16M16")
+    parser.add_argument("--with-spi-sdcard", action="store_true",   help="Enable SPI-mode SDCard support")
+    parser.add_argument("--with-sdcard",     action="store_true",   help="Enable SDCard support")
+    parser.add_argument("--with-oled",       action="store_true",   help="Enable SDD1331 OLED support")
+    parser.add_argument("--sdram-rate",      default="1:1",         help="SDRAM Rate: 1:1 Full Rate (default), 1:2 Half Rate")
+    parser.add_argument("--with-us2-debug",  action="store_true",   help="Enable Wishbone debug bridge on US2")
     builder_args(parser)
     soc_sdram_args(parser)
     trellis_args(parser)
     args = parser.parse_args()
 
-    soc = BaseSoC(device=args.device, revision=args.revision, toolchain=args.toolchain,
-                  sys_clk_freq     = int(float(args.sys_clk_freq)),
-                  sdram_module_cls = args.sdram_module,
-                  sdram_rate       = args.sdram_rate,
-                  usb_debug        = args.with_us2_debug,
-                  **soc_sdram_argdict(args))
+    soc = BaseSoC(
+        device           = args.device,
+        revision         = args.revision,
+        toolchain        = args.toolchain,
+        sys_clk_freq     = int(float(args.sys_clk_freq)),
+        sdram_module_cls = args.sdram_module,
+        sdram_rate       = args.sdram_rate,
+        usb_debug        = args.with_us2_debug,
+        **soc_sdram_argdict(args))
     assert not (args.with_spi_sdcard and args.with_sdcard)
     if args.with_spi_sdcard:
         soc.add_spi_sdcard()
