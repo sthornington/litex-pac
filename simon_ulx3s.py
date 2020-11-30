@@ -90,8 +90,8 @@ class BaseSoC(SoCCore):
 
         if usb_debug:
             # TODO import this properly somehow?
-            os.system("git clone https://github.com/gregdavill/valentyusb -b hw_cdc_eptri")
-#            os.system("git clone git@github.com:im-tomu/valentyusb.git")
+#            os.system("git clone https://github.com/gregdavill/valentyusb -b hw_cdc_eptri")
+            os.system("git clone git@github.com:im-tomu/valentyusb.git")
             sys.path.append("valentyusb")
 
         # SoCCore ----------------------------------------------------------------------------------
@@ -116,7 +116,8 @@ class BaseSoC(SoCCore):
             # just enumerate and hook up dummy debug wishbone
             self.submodules.usb = dummyusb.DummyUsb(usb_iobuf,
                                                     debug=True,
-                                                    cdc=True)
+                                                    cdc=True,
+                                                    relax_timing=True)
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
