@@ -121,7 +121,6 @@ class BaseSoC(SoCCore):
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
-            self.register_mem("vexriscv_debug", 0xf00f0000, self.cpu.debug_bus, 0x100)
             self.add_csr("usb")
 
         # SDR SDRAM --------------------------------------------------------------------------------
