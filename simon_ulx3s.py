@@ -23,8 +23,8 @@ from litex.build.lattice.trellis import trellis_args, trellis_argdict
 
 from litex.soc.cores.clock import *
 from litex.soc.integration.soc_core import *
-from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
+from litex.soc.cores.video import VideoECP5HDMIPHY
 from litex.soc.cores.led import LedChaser
 from litex.soc.cores.spi import SPIMaster
 from litex.soc.cores.gpio import GPIOOut
@@ -35,7 +35,7 @@ from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 # CRG ----------------------------------------------------------------------------------------------
 
 class _CRG(Module):
-    def __init__(self, platform, sys_clk_freq, with_usb_pll=False, sdram_rate="1:1"):
+    def __init__(self, platform, sys_clk_freq, with_usb_pll=False, with_video_pll=False, sdram_rate="1:1"):
         self.rst = Signal()
         self.clock_domains.cd_sys = ClockDomain()
         if sdram_rate == "1:2":
@@ -71,6 +71,16 @@ class _CRG(Module):
             usb_pll.create_clkout(self.cd_usb_12, 12e6, margin=0)
             usb_pll.create_clkout(self.cd_usb_48, 48e6, margin=0)
 
+        # Video PLL
+        if with_video_pll:
+            self.submodules.video_pll = video_pll = ECP5PLL()
+            self.comb += video_pll.reset.eq(rst | self.rst)
+            video_pll.register_clkin(clk25, 25e6)
+            self.clock_domains.cd_hdmi   = ClockDomain()
+            self.clock_domains.cd_hdmi5x = ClockDomain()
+            video_pll.create_clkout(self.cd_hdmi,    40e6, margin=0)
+            video_pll.create_clkout(self.cd_hdmi5x, 200e6, margin=0)
+
         # SDRAM clock
         sdram_clk = ClockSignal("sys2x_ps" if sdram_rate == "1:2" else "sys_ps")
         self.specials += DDROutput(1, 0, platform.request("sdram_clock"), sdram_clk)
@@ -83,10 +93,14 @@ class _CRG(Module):
 class BaseSoC(SoCCore):
     def __init__(self, device="LFE5U-45F", revision="2.0", toolchain="trellis",
                  sys_clk_freq=int(50e6), sdram_module_cls="MT48LC16M16", sdram_rate="1:1",
+                 with_video_terminal=False, with_video_framebuffer=False, spiflash=False,
                  usb_debug=False,
                  **kwargs):
 
         platform = ulx3s.Platform(device=device, revision=revision, toolchain=toolchain)
+
+        if spiflash:
+            self.mem_map = {**SoCCore.mem_map, **{"spiflash": 0x80000000}}
 
         if usb_debug:
             # TODO import this properly somehow?
@@ -102,7 +116,8 @@ class BaseSoC(SoCCore):
 
         # CRG --------------------------------------------------------------------------------------
         with_usb_pll = kwargs.get("uart_name", None) == "usb_acm" or usb_debug
-        self.submodules.crg = _CRG(platform, sys_clk_freq, with_usb_pll, sdram_rate=sdram_rate)
+        with_video_pll = with_video_terminal or with_video_framebuffer
+        self.submodules.crg = _CRG(platform, sys_clk_freq, with_usb_pll, with_video_pll, sdram_rate=sdram_rate)
 
         # USB Debug on US2 -------------------------------------------------------------------------
         # This enables the use of wishbone-tool to poke memory via US2 USB interface, and hopefully
@@ -121,7 +136,6 @@ class BaseSoC(SoCCore):
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
-            self.add_csr("usb")
 
         # SDR SDRAM --------------------------------------------------------------------------------
         if not self.integrated_main_ram_size:
@@ -137,21 +151,26 @@ class BaseSoC(SoCCore):
                 l2_cache_reverse        = True
             )
 
+        # Video ------------------------------------------------------------------------------------
+        if with_video_terminal or with_video_framebuffer:
+            self.submodules.videophy = VideoECP5HDMIPHY(platform.request("gpdi"), clock_domain="hdmi")
+            if with_video_terminal:
+                self.add_video_terminal(phy=self.videophy, timings="800x600@60Hz", clock_domain="hdmi")
+            if with_video_framebuffer:
+                self.add_video_framebuffer(phy=self.videophy, timings="800x600@60Hz", clock_domain="hdmi")
+
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(
             pads         = platform.request_all("user_led"),
             sys_clk_freq = sys_clk_freq)
-        self.add_csr("leds")
 
     def add_oled(self):
         pads = self.platform.request("oled_spi")
         pads.miso = Signal()
         self.submodules.oled_spi = SPIMaster(pads, 8, self.sys_clk_freq, 8e6)
         self.oled_spi.add_clk_divider()
-        self.add_csr("oled_spi")
 
         self.submodules.oled_ctl = GPIOOut(self.platform.request("oled_ctl"))
-        self.add_csr("oled_ctl")
 
 # Build --------------------------------------------------------------------------------------------
 
@@ -164,13 +183,19 @@ def main():
     parser.add_argument("--revision",        default="2.0",         help="Board revision: 2.0 (default) or 1.7")
     parser.add_argument("--sys-clk-freq",    default=50e6,          help="System clock frequency  (default: 50MHz)")
     parser.add_argument("--sdram-module",    default="MT48LC16M16", help="SDRAM module: MT48LC16M16 (default), AS4C32M16 or AS4C16M16")
-    parser.add_argument("--with-spi-sdcard", action="store_true",   help="Enable SPI-mode SDCard support")
-    parser.add_argument("--with-sdcard",     action="store_true",   help="Enable SDCard support")
+    parser.add_argument("--with-spiflash",   action="store_true",   help="Make the SPI Flash accessible from the SoC")
+    parser.add_argument("--flash-boot-adr",  type=lambda x: int(x,0), default=None, help="Flash boot address")
+    sdopts = parser.add_mutually_exclusive_group()
+    sdopts.add_argument("--with-spi-sdcard", action="store_true",   help="Enable SPI-mode SDCard support")
+    sdopts.add_argument("--with-sdcard",     action="store_true",   help="Enable SDCard support")
     parser.add_argument("--with-oled",       action="store_true",   help="Enable SDD1331 OLED support")
     parser.add_argument("--sdram-rate",      default="1:1",         help="SDRAM Rate: 1:1 Full Rate (default), 1:2 Half Rate")
+    viopts = parser.add_mutually_exclusive_group()
+    viopts.add_argument("--with-video-terminal",    action="store_true", help="Enable Video Terminal (HDMI)")
+    viopts.add_argument("--with-video-framebuffer", action="store_true", help="Enable Video Framebuffer (HDMI)")
     parser.add_argument("--with-us2-debug",  action="store_true",   help="Enable Wishbone debug bridge on US2")
     builder_args(parser)
-    soc_sdram_args(parser)
+    soc_core_args(parser)
     trellis_args(parser)
     args = parser.parse_args()
 
@@ -181,8 +206,11 @@ def main():
         sys_clk_freq     = int(float(args.sys_clk_freq)),
         sdram_module_cls = args.sdram_module,
         sdram_rate       = args.sdram_rate,
+        with_video_terminal    = args.with_video_terminal,
+        with_video_framebuffer = args.with_video_framebuffer,
+        spiflash               = args.with_spiflash,
         usb_debug        = args.with_us2_debug,
-        **soc_sdram_argdict(args))
+        **soc_core_argdict(args))
     assert not (args.with_spi_sdcard and args.with_sdcard)
     if args.with_spi_sdcard:
         soc.add_spi_sdcard()
@@ -190,6 +218,10 @@ def main():
         soc.add_sdcard()
     if args.with_oled:
         soc.add_oled()
+    if args.with_spiflash:
+        soc.add_spi_flash(mode="1x", dummy_cycles=8)
+        if args.flash_boot_adr:
+            soc.add_constant("FLASH_BOOT_ADDRESS", args.flash_boot_adr)
 
     builder = Builder(soc, **builder_argdict(args))
     builder_kargs = trellis_argdict(args) if args.toolchain == "trellis" else {}
