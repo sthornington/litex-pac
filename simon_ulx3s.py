@@ -35,9 +35,9 @@ from litedram import modules as litedram_modules
 from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 
 class Matrix8x8(Module, AutoCSR):
-    def __init__(self, clk, rst, matrix_spi):
+    def __init__(self, clk, rst, pads):
+        self.pads = pads # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
         self.bus = bus = wishbone.Interface(data_width = 32)
-        self.spi = matrix_spi # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
         self.speed = CSRStorage(2) # for i_refresh_speed
         self.rst = Signal() # why do people do this?
         self.clk = clk
@@ -45,9 +45,9 @@ class Matrix8x8(Module, AutoCSR):
                                   i_clk = ClockSignal("sys_ps"),
                                   i_reset = rst | self.rst,
                                   i_i_refresh_speed = self.speed.storage,
-                                  o_o_matrix_clk = self.spi.clk,
-                                  o_o_matrix_latch = self.spi.latch,
-                                  o_o_matrix_mosi = self.spi.mosi,
+                                  o_o_matrix_clk = pads.clk,
+                                  o_o_matrix_latch = pads.latch,
+                                  o_o_matrix_mosi = pads.mosi,
                                   i_i_wb_cyc = bus.cyc,
                                   i_i_wb_stb = bus.stb,
                                   i_i_wb_we = bus.we,
@@ -202,9 +202,12 @@ class BaseSoC(SoCCore):
         self.submodules.oled_ctl = GPIOOut(self.platform.request("oled_ctl"))
 
     def add_matrix(self):
-        spi = self.platform.request("matrix_spi")
-        self.platform.add_verilog_include_path("~/git/matrix8x8/src")
-        self.matrix_spi = Matrix8x8(self.crg.cd_sys, self.crg.rst, spi)
+        pads = self.platform.request("matrix")
+        # https://github.com/sthornington/matrix8x8
+        matrix8x8_path = "/home/sthornington/git/matrix8x8/src"
+        self.platform.add_verilog_include_path(matrix8x8_path)
+        self.platform.add_sources(matrix8x8_path, "matrix.sv", "mod3.sv")
+        self.submodules.matrix = Matrix8x8(self.crg.cd_sys, self.crg.rst, pads)
 
 # Build --------------------------------------------------------------------------------------------
 
@@ -223,7 +226,7 @@ def main():
     sdopts.add_argument("--with-spi-sdcard", action="store_true",   help="Enable SPI-mode SDCard support")
     sdopts.add_argument("--with-sdcard",     action="store_true",   help="Enable SDCard support")
     parser.add_argument("--with-oled",       action="store_true",   help="Enable SDD1331 OLED support")
-    parser.add_argument("--with-matrix",      action="store_true",  help="Enable matrix (shift registered) support")
+    parser.add_argument("--with-matrix",     action="store_true",   help="Enable matrix (shift registered) support")
     parser.add_argument("--sdram-rate",      default="1:1",         help="SDRAM Rate: 1:1 Full Rate (default), 1:2 Half Rate")
     viopts = parser.add_mutually_exclusive_group()
     viopts.add_argument("--with-video-terminal",    action="store_true", help="Enable Video Terminal (HDMI)")
