@@ -42,8 +42,8 @@ class Matrix8x8(Module, AutoCSR):
         self.rst = Signal() # why do people do this?
         self.clk = clk
         self.specials += Instance("matrix",
-                                  i_clk = ClockSignal(),
-                                  i_reset = ResetSignal() | self.rst,
+                                  i_clk = ClockSignal("sys_ps"),
+                                  i_reset = rst | self.rst,
                                   i_i_refresh_speed = self.speed.storage,
                                   o_o_matrix_clk = self.spi.clk,
                                   o_o_matrix_latch = self.spi.latch,
