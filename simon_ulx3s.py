@@ -24,6 +24,8 @@ from litex.build.lattice.trellis import trellis_args, trellis_argdict
 from litex.soc.cores.clock import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
+from litex.soc.interconnect import wishbone
+from litex.soc.interconnect.csr import *
 from litex.soc.cores.video import VideoECP5HDMIPHY
 from litex.soc.cores.led import LedChaser
 from litex.soc.cores.spi import SPIMaster
@@ -31,6 +33,34 @@ from litex.soc.cores.gpio import GPIOOut
 
 from litedram import modules as litedram_modules
 from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
+
+class Matrix8x8(Module, AutoCSR):
+    def __init__(self, clk, rst, matrix_spi):
+        self.bus = bus = wishbone.Interface(data_width = 32)
+        self.spi = matrix_spi # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
+        self.speed = CSRStorage(2) # for i_refresh_speed
+        self.rst = Signal() # why do people do this?
+        self.clk = clk
+        self.specials += Instance("matrix",
+                                  i_clk = ClockSignal(),
+                                  i_reset = ResetSignal() | self.rst,
+                                  i_i_refresh_speed = self.speed.storage,
+                                  o_o_matrix_clk = self.spi.clk,
+                                  o_o_matrix_latch = self.spi.latch,
+                                  o_o_matrix_mosi = self.spi.mosi,
+                                  i_i_wb_cyc = bus.cyc,
+                                  i_i_wb_stb = bus.stb,
+                                  i_i_wb_we = bus.we,
+                                  i_i_wb_addr = bus.adr,
+                                  i_i_wb_sel = bus.sel,
+                                  i_i_wb_wdata = bus.dat_w,
+                                  o_o_wb_ack = bus.ack,
+#                                  o_wb_stall = # no stall in regular wishbone?
+                                  o_o_wb_rdata = bus.dat_r)
+
+
+#        self.specials += Instance("matrix"
+
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -169,8 +199,12 @@ class BaseSoC(SoCCore):
         pads.miso = Signal()
         self.submodules.oled_spi = SPIMaster(pads, 8, self.sys_clk_freq, 8e6)
         self.oled_spi.add_clk_divider()
-
         self.submodules.oled_ctl = GPIOOut(self.platform.request("oled_ctl"))
+
+    def add_matrix(self):
+        spi = self.platform.request("matrix_spi")
+        self.platform.add_verilog_include_path("~/git/matrix8x8/src")
+        self.matrix_spi = Matrix8x8(self.crg.cd_sys, self.crg.rst, spi)
 
 # Build --------------------------------------------------------------------------------------------
 
@@ -189,6 +223,7 @@ def main():
     sdopts.add_argument("--with-spi-sdcard", action="store_true",   help="Enable SPI-mode SDCard support")
     sdopts.add_argument("--with-sdcard",     action="store_true",   help="Enable SDCard support")
     parser.add_argument("--with-oled",       action="store_true",   help="Enable SDD1331 OLED support")
+    parser.add_argument("--with-matrix",      action="store_true",  help="Enable matrix (shift registered) support")
     parser.add_argument("--sdram-rate",      default="1:1",         help="SDRAM Rate: 1:1 Full Rate (default), 1:2 Half Rate")
     viopts = parser.add_mutually_exclusive_group()
     viopts.add_argument("--with-video-terminal",    action="store_true", help="Enable Video Terminal (HDMI)")
@@ -218,6 +253,8 @@ def main():
         soc.add_sdcard()
     if args.with_oled:
         soc.add_oled()
+    if args.with_matrix:
+        soc.add_matrix()
     if args.with_spiflash:
         soc.add_spi_flash(mode="1x", dummy_cycles=8)
         if args.flash_boot_adr:
