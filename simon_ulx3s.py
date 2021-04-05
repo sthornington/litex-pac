@@ -39,11 +39,11 @@ class Matrix8x8(Module, AutoCSR):
         self.pads = pads # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
         self.bus = bus = wishbone.Interface(data_width = 32)
         self.speed = CSRStorage(2) # for i_refresh_speed
-        self.rst = Signal() # why do people do this?
+#        self.rst = Signal() # why do people do this?
         self.clk = clk
         self.specials += Instance("matrix",
                                   i_clk = ClockSignal("sys_ps"),
-                                  i_reset = rst | self.rst,
+                                  i_reset = rst, #| self.rst
                                   i_i_refresh_speed = self.speed.storage,
                                   o_o_matrix_clk = pads.clk,
                                   o_o_matrix_latch = pads.latch,
@@ -207,7 +207,13 @@ class BaseSoC(SoCCore):
         matrix8x8_path = "/home/sthornington/git/matrix8x8/src"
         self.platform.add_verilog_include_path(matrix8x8_path)
         self.platform.add_sources(matrix8x8_path, "matrix.sv", "mod3.sv")
-        self.submodules.matrix = Matrix8x8(self.crg.cd_sys, self.crg.rst, pads)
+        region_size = 4 * 8 # four bytes per row (8 nibbles), 8 rows
+        mem_map = { "matrix": 0xc0000000 }
+        self.mem_map.update(mem_map)
+        self.add_memory_region("matrix", self.mem_map["matrix"], region_size, type="io")
+        matrix = Matrix8x8(self.crg.cd_sys, self.crg.rst, pads)
+        self.submodules.matrix = matrix
+        self.add_wb_slave(self.mem_map["matrix"], matrix.bus)
 
 # Build --------------------------------------------------------------------------------------------
 
