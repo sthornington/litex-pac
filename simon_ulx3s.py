@@ -33,16 +33,16 @@ from litex.soc.cores.gpio import GPIOOut
 
 from litedram import modules as litedram_modules
 from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
+from litescope import LiteScopeAnalyzer
 
 class Matrix8x8(Module, AutoCSR):
     def __init__(self, clk, rst, pads):
         self.pads = pads # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
         self.bus = bus = wishbone.Interface(data_width = 32)
         self.speed = CSRStorage(2) # for i_refresh_speed
-#        self.rst = Signal() # why do people do this?
         self.clk = clk
         self.specials += Instance("matrix",
-                                  i_clk = ClockSignal("sys_ps"),
+                                  i_clk = ClockSignal("sys"),
                                   i_reset = rst, #| self.rst
                                   i_i_refresh_speed = self.speed.storage,
                                   o_o_matrix_clk = pads.clk,
@@ -57,10 +57,6 @@ class Matrix8x8(Module, AutoCSR):
                                   o_o_wb_ack = bus.ack,
 #                                  o_wb_stall = # no stall in regular wishbone?
                                   o_o_wb_rdata = bus.dat_r)
-
-
-#        self.specials += Instance("matrix"
-
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -136,6 +132,7 @@ class BaseSoC(SoCCore):
             # TODO import this properly somehow?
 #            os.system("git clone https://github.com/gregdavill/valentyusb -b hw_cdc_eptri")
             os.system("git clone git@github.com:im-tomu/valentyusb.git")
+#            os.system("git clone https://github.com/litex-hub/valentyusb -b hw_cdc_eptri")
             sys.path.append("valentyusb")
 
         # SoCCore ----------------------------------------------------------------------------------
@@ -159,10 +156,15 @@ class BaseSoC(SoCCore):
             usb_iobuf = usbio.IoBuf(usb_pads.d_p, usb_pads.d_n, usb_pads.pullup)
             # self.submodules.usb = epfifo.PerEndpointFifoInterface(usb_iobuf, debug=True)
             # just enumerate and hook up dummy debug wishbone
+            # random valenty
+#            self.submodules.usb = dummyusb.DummyUsb(usb_iobuf,
+#                                                    debug=True)
+            # default valenty
             self.submodules.usb = dummyusb.DummyUsb(usb_iobuf,
                                                     debug=True,
                                                     cdc=True,
                                                     relax_timing=True)
+
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
@@ -194,6 +196,7 @@ class BaseSoC(SoCCore):
             pads         = platform.request_all("user_led"),
             sys_clk_freq = sys_clk_freq)
 
+
     def add_oled(self):
         pads = self.platform.request("oled_spi")
         pads.miso = Signal()
@@ -214,6 +217,26 @@ class BaseSoC(SoCCore):
         matrix = Matrix8x8(self.crg.cd_sys, self.crg.rst, pads)
         self.submodules.matrix = matrix
         self.add_wb_slave(self.mem_map["matrix"], matrix.bus)
+
+        # LiteScope Analyzer -----------------------------------------------------------------------
+        count = Signal(8)
+        self.sync += count.eq(count + 1)
+        analyzer_signals = [
+            matrix.bus,
+#            self.cpu.dbus.stb,
+#            self.cpu.dbus.cyc,
+#            self.cpu.dbus.adr,
+#            self.cpu.dbus.we,
+#            self.cpu.dbus.ack,
+#            self.cpu.dbus.sel,
+#            self.cpu.dbus.dat_w,
+#            self.cpu.dbus.dat_r,
+            count,
+        ]
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
+            depth        = 1024,
+            clock_domain = "sys",
+            csr_csv      = "analyzer.csv")
 
 # Build --------------------------------------------------------------------------------------------
 
