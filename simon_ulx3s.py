@@ -36,13 +36,12 @@ from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 from litescope import LiteScopeAnalyzer
 
 class Matrix8x8(Module, AutoCSR):
-    def __init__(self, clk, rst, pads):
+    def __init__(self, cd, rst, pads):
         self.pads = pads # for o_matrix_clk/o_matrix_latch/o_matrix_mosi
         self.bus = bus = wishbone.Interface(data_width = 32)
         self.speed = CSRStorage(2) # for i_refresh_speed
-        self.clk = clk
         self.specials += Instance("matrix",
-                                  i_clk = ClockSignal("sys"),
+                                  i_clk = ClockSignal("sys"), #ClockSignal(cd), # figure out how to get a ClockSignal from the domain itself?
                                   i_reset = rst, #| self.rst
                                   i_i_refresh_speed = self.speed.storage,
                                   o_o_matrix_clk = pads.clk,
@@ -213,8 +212,9 @@ class BaseSoC(SoCCore):
         region_size = 4 * 8 # four bytes per row (8 nibbles), 8 rows
         mem_map = { "matrix": 0xc0000000 }
         self.mem_map.update(mem_map)
+        cd = self.crg.cd_sys
         self.add_memory_region("matrix", self.mem_map["matrix"], region_size, type="io")
-        matrix = Matrix8x8(self.crg.cd_sys, self.crg.rst, pads)
+        matrix = Matrix8x8(cd, self.crg.rst, pads)
         self.submodules.matrix = matrix
         self.add_wb_slave(self.mem_map["matrix"], matrix.bus)
 
@@ -223,20 +223,12 @@ class BaseSoC(SoCCore):
         self.sync += count.eq(count + 1)
         analyzer_signals = [
             matrix.bus,
-#            self.cpu.dbus.stb,
-#            self.cpu.dbus.cyc,
-#            self.cpu.dbus.adr,
-#            self.cpu.dbus.we,
-#            self.cpu.dbus.ack,
-#            self.cpu.dbus.sel,
-#            self.cpu.dbus.dat_w,
-#            self.cpu.dbus.dat_r,
             count,
         ]
         self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
-            depth        = 1024,
-            clock_domain = "sys",
-            csr_csv      = "analyzer.csv")
+                                                     depth        = 1024,
+                                                     clock_domain = "sys", # why can I not use the ClockDomain here?
+                                                     csr_csv      = "analyzer.csv")
 
 # Build --------------------------------------------------------------------------------------------
 

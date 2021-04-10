@@ -1,0 +1,1 @@
+lxserver --usb --usb-vid 0x1209 --usb-pid 0x5bf0 --debug
