@@ -1,1 +1,2 @@
-python3 simon_ulx3s.py --cpu-type vexriscv --cpu-variant imac+debug --csr-data-width 32 --device LFE5U-85F --sdram-module IS42S16160 --with-oled --csr-svd ulx3s.svd --csr-csv csr.csv --build --with-matrix --sys-clk-freq 25e6 --with-us2-debug
+#python3 simon_ulx3s.py --cpu-type vexriscv --cpu-variant imac+debug --csr-data-width 32 --device LFE5U-85F --sdram-module IS42S16160 --with-oled --csr-svd ulx3s.svd --csr-csv csr.csv --build --with-matrix --sys-clk-freq 25e6 --with-us2-debug
+python3 simon_ulx3s.py --cpu-type vexriscv --cpu-variant imac+debug --csr-data-width 32 --device LFE5U-85F --sdram-module IS42S16160 --with-oled --csr-svd ulx3s.svd --csr-csv csr.csv --build --with-matrix --sys-clk-freq 25e6 --with-uart-debug

@@ -30,6 +30,7 @@ from litex.soc.cores.video import VideoECP5HDMIPHY
 from litex.soc.cores.led import LedChaser
 from litex.soc.cores.spi import SPIMaster
 from litex.soc.cores.gpio import GPIOOut
+from litex.soc.cores.uart import UARTWishboneBridge
 
 from litedram import modules as litedram_modules
 from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
@@ -119,7 +120,7 @@ class BaseSoC(SoCCore):
     def __init__(self, device="LFE5U-45F", revision="2.0", toolchain="trellis",
                  sys_clk_freq=int(50e6), sdram_module_cls="MT48LC16M16", sdram_rate="1:1",
                  with_video_terminal=False, with_video_framebuffer=False, spiflash=False,
-                 usb_debug=False,
+                 usb_debug=False, uart_debug=True,
                  **kwargs):
 
         platform = ulx3s.Platform(device=device, revision=revision, toolchain=toolchain)
@@ -167,6 +168,14 @@ class BaseSoC(SoCCore):
             self.add_wb_master(self.usb.debug_bridge.wishbone)
             if not hasattr(self.cpu, 'debug_bus'):
                 raise RuntimeError('US2 Debug requires a CPU variant with +debug')
+
+        if uart_debug:
+            self.submodules.uart_bridge = UARTWishboneBridge(
+                platform.request("uart0"),
+                sys_clk_freq,
+                baudrate=115200)
+            self.add_wb_master(self.uart_bridge.wishbone)
+
 
         # SDR SDRAM --------------------------------------------------------------------------------
         if not self.integrated_main_ram_size:
@@ -253,6 +262,7 @@ def main():
     viopts.add_argument("--with-video-terminal",    action="store_true", help="Enable Video Terminal (HDMI)")
     viopts.add_argument("--with-video-framebuffer", action="store_true", help="Enable Video Framebuffer (HDMI)")
     parser.add_argument("--with-us2-debug",  action="store_true",   help="Enable Wishbone debug bridge on US2")
+    parser.add_argument("--with-uart-debug",  action="store_true",   help="Enable Wishbone debug bridge on uart0")
     builder_args(parser)
     soc_core_args(parser)
     trellis_args(parser)
@@ -269,6 +279,7 @@ def main():
         with_video_framebuffer = args.with_video_framebuffer,
         spiflash               = args.with_spiflash,
         usb_debug        = args.with_us2_debug,
+        uart_debug       = args.with_uart_debug,
         **soc_core_argdict(args))
     assert not (args.with_spi_sdcard and args.with_sdcard)
     if args.with_spi_sdcard:
