@@ -173,7 +173,8 @@ class BaseSoC(SoCCore):
             self.submodules.uart_bridge = UARTWishboneBridge(
                 platform.request("uart0"),
                 sys_clk_freq,
-                baudrate=115200)
+#                baudrate=115200)
+                baudrate=3000000)
             self.add_wb_master(self.uart_bridge.wishbone)
 
 
